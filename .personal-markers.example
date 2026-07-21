@@ -1,0 +1,44 @@
+# Personal marker list — template.
+#
+#   cp .personal-markers.example .personal-markers
+#
+# .personal-markers is gitignored and never leaves your machine. The pre-commit
+# hook in .githooks/ refuses any commit where a marker appears in a staged file's
+# contents or in its path.
+#
+# Format: one marker per line. Blank lines and #-comments are ignored.
+# Matching is literal text, case-insensitive, anywhere in the line (substring).
+#
+# Two rules of thumb:
+#   - Prefer the shortest form that still catches every variant. YOUR_PROJECT
+#     catches your-project-api, YOUR_PROJECTApp, and your_project.dev at once.
+#   - Do not add anything that legitimately appears in this repository — the
+#     public name of the project, its GitHub org, its license holder. A marker
+#     that matches the README blocks every commit you will ever make. Use a full
+#     email rather than a bare handle when the handle is also the public org.
+
+# --- Identity -----------------------------------------------------------
+YOUR_NAME
+YOUR_FULL_NAME
+you@example.com
+you@YOUR_DOMAIN
+YOUR_DOMAIN.com
+
+# --- Machine ------------------------------------------------------------
+# Home-directory paths leak the account name through pasted terminal output.
+/Users/YOUR_USERNAME
+/home/YOUR_USERNAME
+
+# --- Private projects ---------------------------------------------------
+YOUR_PROJECT
+YOUR_OTHER_PROJECT
+YOUR_PRIVATE_REPO
+
+# --- Clients and engagements --------------------------------------------
+CLIENT_NAME_ONE
+CLIENT_NAME_TWO
+CLIENT_PRODUCT_CODENAME
+
+# --- Private infrastructure ---------------------------------------------
+INTERNAL_HOSTNAME.example
+YOUR_GITLAB_HOST

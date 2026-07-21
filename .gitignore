@@ -1,0 +1,15 @@
+# Local marker list for the pre-commit guard — must never be committed.
+.personal-markers
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Environment
+.env
+.env.*
+!.env.example

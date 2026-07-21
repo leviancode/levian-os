@@ -9,12 +9,54 @@
 # Enable once per clone:
 #     git config core.hooksPath .githooks
 #
+# ---------------------------------------------------------------------------
+# WHAT THIS GUARD CHECKS
+#
+#   1. Commit identity   — `git config user.email` and `user.name`, scanned
+#                          against the marker list. Runs before the staged-file
+#                          check, because an empty commit still writes an author
+#                          line into permanent history.
+#   2. File paths        — a path alone can carry a client or project name.
+#   3. File content      — the *staged* blob of every added or modified file.
+#   4. Credential shapes — a fixed list of well-known key and token formats.
+#   5. The marker list   — .personal-markers itself can never be staged.
+#
+# WHAT IT DOES NOT CATCH (known limits)
+#
+#   - Markers are literal, case-insensitive substrings. No regex, no fuzzy
+#     matching: the marker "Acme Corp" does not catch "AcmeCorp" or "acme-corp".
+#     Prefer the shortest distinctive form.
+#   - Only the credential shapes listed in section 4 are recognised. A secret in
+#     any other format — a database URL, a bare password, a bearer token — passes
+#     untouched.
+#   - Binary files are skipped (grep -I), so a marker inside an image, a PDF, or
+#     an archive is invisible to the content scan.
+#   - Only staged additions and modifications are read. Content already in
+#     history is never re-examined: this hook prevents a leak, it cannot undo one.
+#   - Commit *message* text is not scanned; this is a pre-commit hook and the
+#     message is not final when it runs.
+#   - `--no-verify` bypasses every check here.
+#
+# IDENTITY MUST BE SET REPO-LOCALLY BEFORE THE FIRST COMMIT on any public repo.
+# The author line is permanent, and correcting it afterwards means rewriting
+# history for everyone who has cloned:
+#
+#     git config user.email <id>+<handle>@users.noreply.github.com
+#     git config user.name  "<public attribution name>"
+#
+# Set it per repo. A global identity carrying a personal address will otherwise
+# be inherited silently by every new clone.
+# ---------------------------------------------------------------------------
+#
 # Personal markers are read from .personal-markers, which is gitignored and stays
 # on your machine. Start from the committed template:
 #     cp .personal-markers.example .personal-markers
 #
 # The scan reads the *staged* blob, not the working-tree copy, so `git add -p`
 # cannot sneak content past it.
+#
+# The test suite proving each of these checks actually fires lives in
+# .githooks/test/ — run it after any change here.
 
 set -uo pipefail
 
@@ -30,18 +72,111 @@ fi
 say()  { printf '%s\n' "$*" >&2; }
 hit()  { printf '    %s%s%s\n' "$c_red" "$*" "$c_off" >&2; }
 
+fail=0          # any check failed
+fail_content=0  # a staged-content check failed (selects the closing advice)
+
+# ---------------------------------------------------------------------------
+# Load the marker list.
+#
+# Lines are markers by default. A [identity-allow] header switches to the
+# identity allowlist: values permitted as commit author name or email even
+# though they match a marker. A [markers] header switches back.
+#
+# Allowlisting is scoped to identity alone. An allowlisted string is still
+# blocked in file content and in paths — a name you publish as the author of a
+# commit is not therefore a name you want scattered through the source.
+# ---------------------------------------------------------------------------
+patterns=''
+identity_allow=''
+
+if [ -f "$markers_file" ]; then
+	patterns="$(mktemp)"
+	identity_allow="$(mktemp)"
+	trap 'rm -f "$patterns" "$identity_allow"' EXIT
+
+	section=markers
+	while IFS= read -r raw || [ -n "$raw" ]; do
+		line="${raw%%#*}"                              # drop comments
+		line="${line#"${line%%[![:space:]]*}"}"        # trim leading space
+		line="${line%"${line##*[![:space:]]}"}"        # trim trailing space
+		[ -z "$line" ] && continue
+
+		case "$line" in
+			'[identity-allow]') section=identity; continue ;;
+			'[markers]')        section=markers;  continue ;;
+			'['*']')
+				# Unknown section: fail safe by treating its entries as markers.
+				say "${c_yellow}⚠ pre-commit: unknown section $line in .personal-markers — entries treated as markers.${c_off}"
+				section=markers; continue ;;
+		esac
+
+		if [ "$section" = identity ]; then
+			printf '%s\n' "$line" >> "$identity_allow"
+		else
+			printf '%s\n' "$line" >> "$patterns"
+		fi
+	done < "$markers_file"
+else
+	say "${c_yellow}⚠ pre-commit: .personal-markers not found — personal-data scan skipped.${c_off}"
+	say "  ${c_dim}cp .personal-markers.example .personal-markers${c_off}"
+fi
+
+have_markers=0
+[ -n "$patterns" ] && [ -s "$patterns" ] && have_markers=1
+
+# ---------------------------------------------------------------------------
+# 1. Commit identity.
+#
+#    Deliberately ahead of the staged-file early-out: `git commit --allow-empty`
+#    stages nothing and still records an author line forever.
+# ---------------------------------------------------------------------------
+if [ "$have_markers" -eq 1 ]; then
+	ident_bad=()
+	for field in user.email user.name; do
+		value="$(git config "$field" 2>/dev/null)"
+		[ -z "$value" ] && continue
+
+		printf '%s' "$value" | grep -qiF -f "$patterns" || continue
+
+		# Permitted only on an exact, whole-value, case-insensitive match, so an
+		# allowlisted "A.Name" cannot vouch for "A.Name <personal@example.com>".
+		if [ -s "$identity_allow" ] &&
+			printf '%s\n' "$value" | grep -qixF -f "$identity_allow"; then
+			continue
+		fi
+
+		ident_bad+=("$field  $value")
+	done
+
+	if [ ${#ident_bad[@]} -gt 0 ]; then
+		say ""
+		say "${c_red}✖ Commit identity contains a guarded marker.${c_off}"
+		say ""
+		for x in "${ident_bad[@]}"; do hit "$x"; done
+		say ""
+		say "  This repository is public and the author line is permanent. Set a"
+		say "  repo-local identity, then commit again:"
+		say ""
+		say "  ${c_dim}git config user.email <id>+<handle>@users.noreply.github.com${c_off}"
+		say "  ${c_dim}git config user.name  \"<public attribution name>\"${c_off}"
+		say ""
+		say "  ${c_dim}If this value is your intended public attribution, add it verbatim${c_off}"
+		say "  ${c_dim}under [identity-allow] in .personal-markers.${c_off}"
+		say ""
+		fail=1
+	fi
+fi
+
 # Staged, still-present files. Deletions cannot leak anything.
 staged=()
 while IFS= read -r -d '' f; do
 	staged+=("$f")
 done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM -z)
 
-[ ${#staged[@]} -eq 0 ] && exit 0
-
-fail=0
+[ ${#staged[@]} -eq 0 ] && exit "$fail"
 
 # ---------------------------------------------------------------------------
-# 0. The marker list itself must never be committed.
+# 2. The marker list itself must never be committed.
 # ---------------------------------------------------------------------------
 for f in "${staged[@]}"; do
 	if [ "$f" = ".personal-markers" ]; then
@@ -57,44 +192,33 @@ for f in "${staged[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 1. Personal markers — local, opt-in.
+# 3. Personal markers in paths and staged content — local, opt-in.
 # ---------------------------------------------------------------------------
-if [ -f "$markers_file" ]; then
-	patterns="$(mktemp)"
-	trap 'rm -f "$patterns"' EXIT
-
-	# Drop comments, blank lines, and surrounding whitespace.
-	sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$markers_file" \
-		| grep -v '^$' > "$patterns"
-
-	if [ -s "$patterns" ]; then
-		found=()
-		for f in "${staged[@]}"; do
-			# The path itself can carry a client name.
-			if printf '%s' "$f" | grep -qiFf "$patterns"; then
-				found+=("path: $f")
-			fi
-			# Line numbers only — never echo the matched text back to the terminal.
-			while IFS= read -r line; do
-				found+=("$f:${line%%:*}")
-			done < <(git show ":$f" 2>/dev/null | grep -inIFf "$patterns" | head -20)
-		done
-
-		if [ ${#found[@]} -gt 0 ]; then
-			say ""
-			say "${c_red}✖ Personal markers found in staged changes.${c_off}"
-			say ""
-			for x in "${found[@]}"; do hit "$x"; done
-			fail=1
+if [ "$have_markers" -eq 1 ]; then
+	found=()
+	for f in "${staged[@]}"; do
+		# The path itself can carry a client name.
+		if printf '%s' "$f" | grep -qiF -f "$patterns"; then
+			found+=("path: $f")
 		fi
+		# Line numbers only — never echo the matched text back to the terminal.
+		while IFS= read -r line; do
+			found+=("$f:${line%%:*}")
+		done < <(git show ":$f" 2>/dev/null | grep -inIF -f "$patterns" | head -20)
+	done
+
+	if [ ${#found[@]} -gt 0 ]; then
+		say ""
+		say "${c_red}✖ Personal markers found in staged changes.${c_off}"
+		say ""
+		for x in "${found[@]}"; do hit "$x"; done
+		fail=1
+		fail_content=1
 	fi
-else
-	say "${c_yellow}⚠ pre-commit: .personal-markers not found — personal-data scan skipped.${c_off}"
-	say "  ${c_dim}cp .personal-markers.example .personal-markers${c_off}"
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Credential shapes — always on, no configuration needed.
+# 4. Credential shapes — always on, no configuration needed.
 #    Each pattern is written so its own source text cannot match it.
 # ---------------------------------------------------------------------------
 secrets='-----BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}'
@@ -105,7 +229,10 @@ found=()
 for f in "${staged[@]}"; do
 	while IFS= read -r line; do
 		found+=("$f:${line%%:*}")
-		# -e is required: the pattern starts with '-' and would parse as a flag.
+		# -e is required. The alternation starts with '-----BEGIN', which grep
+		# otherwise parses as a bundle of short flags: it then exits 2 having
+		# scanned nothing, the loop reads no lines, and the whole credential
+		# check silently passes. Covered by test 'credential: PEM private key'.
 	done < <(git show ":$f" 2>/dev/null | grep -nIE -e "$secrets" | head -20)
 done
 
@@ -115,13 +242,16 @@ if [ ${#found[@]} -gt 0 ]; then
 	say ""
 	for x in "${found[@]}"; do hit "$x"; done
 	fail=1
+	fail_content=1
 fi
 
 # ---------------------------------------------------------------------------
 if [ "$fail" -ne 0 ]; then
-	say ""
-	say "  Remove the content, then stage again."
-	say "  A false positive means the marker is too broad — narrow it in .personal-markers."
+	if [ "$fail_content" -ne 0 ]; then
+		say ""
+		say "  Remove the content, then stage again."
+		say "  A false positive means the marker is too broad — narrow it in .personal-markers."
+	fi
 	say ""
 	say "  ${c_dim}--no-verify skips this check. If a real marker reaches a public commit,${c_off}"
 	say "  ${c_dim}rewriting history is the only fix. Be certain before you use it.${c_off}"

@@ -9,6 +9,11 @@
 # Format: one marker per line. Blank lines and #-comments are ignored.
 # Matching is literal text, case-insensitive, anywhere in the line (substring).
 #
+# The hook also scans your commit identity — `git config user.email` and
+# `user.name` — against this list, because the author line is published to
+# permanent history just as file content is. See [identity-allow] at the bottom
+# for the escape hatch when your public attribution name is itself a marker.
+#
 # Two rules of thumb:
 #   - Prefer the shortest form that still catches every variant. YOUR_PROJECT
 #     catches your-project-api, YOUR_PROJECTApp, and your_project.dev at once.
@@ -42,3 +47,22 @@ CLIENT_PRODUCT_CODENAME
 # --- Private infrastructure ---------------------------------------------
 INTERNAL_HOSTNAME.example
 YOUR_GITLAB_HOST
+
+# --- Identity allowlist -------------------------------------------------
+# Everything below [identity-allow] is permitted as the commit author name or
+# email even though it matches a marker above. Matching here is exact and
+# whole-value (still case-insensitive), not substring: "YOUR_NAME" allows the
+# name "YOUR_NAME" and nothing else.
+#
+# This is scoped to commit identity alone. An allowlisted string remains blocked
+# in file content and in paths — publishing a name on the author line is not the
+# same as wanting it scattered through the source.
+#
+# Use it when your public attribution name is also a marker. If you commit under
+# a noreply address and a handle that appear nowhere in your marker list, you do
+# not need this section at all.
+#
+# [markers] switches back to ordinary markers if you prefer to keep going.
+[identity-allow]
+YOUR_NAME
+YOUR_ID+YOUR_HANDLE@users.noreply.github.com

@@ -268,6 +268,194 @@ expect_allow  "no marker list: commit proceeds"
 expect_reason "no marker list: ...with a warning that the scan was skipped" ".personal-markers not found"
 
 # ===========================================================================
+printf '\n%scommit-msg guard — test suite%s\n' "$c_dim" "$c_off"
+# ===========================================================================
+#
+# Same discipline as above: every rejection asserts WHICH check fired, and the
+# accept rows carry equal weight — a hook that rejects everything passes any
+# suite made only of reject cases.
+
+msg_hook="$here/../commit-msg"
+[ -x "$msg_hook" ] || { printf 'no executable commit-msg at %s\n' "$msg_hook" >&2; exit 1; }
+
+# A throwaway repo with only commit-msg installed, so the personal-marker guard
+# cannot be what blocks a case here.
+new_msg_repo() {
+	local d
+	d="$(mktemp -d)"
+	tmpdirs+=("$d")
+	git -c init.defaultBranch=main init -q "$d"
+	mkdir -p "$d/.githooks"
+	cp "$msg_hook" "$d/.githooks/commit-msg"
+	chmod +x "$d/.githooks/commit-msg"
+	git -C "$d" config core.hooksPath .githooks
+	git -C "$d" config commit.gpgsign false
+	git -C "$d" config user.name "Clean Committer"
+	git -C "$d" config user.email "1+clean@users.noreply.github.com"
+	printf 'seed\n' > "$d/file.txt"
+	git -C "$d" add file.txt
+	printf '%s' "$d"
+}
+
+# Commit with a given subject, capturing the same three facts as attempt_commit.
+attempt_subject() {
+	local d="$1" subject="$2"
+	commit_err="$(git -C "$d" commit -m "$subject" 2>&1 >/dev/null)"
+	commit_rc=$?
+	commit_count="$(git -C "$d" rev-list --count --all 2>/dev/null || printf 'ERR')"
+}
+
+msg_block() { # subject, label, reason-needle
+	local d; d="$(new_msg_repo)"
+	attempt_subject "$d" "$1"
+	expect_block "$2"
+	expect_reason "$2 — for the right reason" "$3"
+}
+
+msg_allow() { # subject, label
+	local d; d="$(new_msg_repo)"
+	attempt_subject "$d" "$1"
+	expect_allow "$2"
+}
+
+msg_block 'add a typing indicator' \
+	'rejects: no type, no scope, no id' 'Not a Conventional Commit'
+msg_block 'feat: add a typing indicator (LEV-231)' \
+	'rejects: type but no scope' 'Not a Conventional Commit'
+msg_block 'wip(skills): add a thing (LEV-231)' \
+	'rejects: type outside the allowed set' 'Not a Conventional Commit'
+msg_block 'feat(skills): add a typing indicator' \
+	'rejects: no ticket id' 'does not end with a ticket id'
+msg_block 'feat(skills): add a typing indicator (LEV-1..2)' \
+	'rejects: ticket RANGE, not a list' 'Ticket ranges do not link'
+msg_block 'feat(LEV-149): add a typing indicator' \
+	'rejects: id in the scope slot' 'Not a Conventional Commit'
+
+msg_allow 'feat(skills): add a typing indicator (LEV-231)' \
+	'accepts: one id'
+msg_allow 'fix(hooks): stop the early exit (LEV-230, LEV-231)' \
+	'accepts: several ids, comma-separated'
+msg_allow 'chore(hooks)!: drop the old entrypoint (LEV-231)' \
+	'accepts: breaking-change marker'
+msg_allow 'Merge branch feature into main' \
+	'accepts: merge subject (git writes these)'
+msg_allow 'Revert "feat(skills): add a typing indicator (LEV-231)"' \
+	'accepts: revert subject'
+msg_allow 'fixup! feat(skills): add a typing indicator (LEV-231)' \
+	'accepts: fixup! (squashed away before it lands)'
+
+# ===========================================================================
+printf '\n%spre-push guard — test suite%s\n' "$c_dim" "$c_off"
+# ===========================================================================
+#
+# THE TRAP THIS SUITE EXISTS TO AVOID. git hands pre-push an EMPTY stdin when
+# there is nothing to send, so the hook's read loop never runs and it exits 0.
+# A push attempted from an up-to-date branch therefore "passes" while proving
+# nothing whatsoever about the guard. Every case below pushes a real commit the
+# remote does not have, and the first case pins the trap itself so nobody later
+# mistakes that green for a working guard.
+
+push_hook="$here/../pre-push"
+[ -x "$push_hook" ] || { printf 'no executable pre-push at %s\n' "$push_hook" >&2; exit 1; }
+
+push_err=''
+push_rc=0
+
+# A clone with pre-push installed and a bare remote to push at. Echoes the path.
+new_push_repo() {
+	local d remote
+	d="$(mktemp -d)"; remote="$(mktemp -d)"
+	tmpdirs+=("$d" "$remote")
+	git -c init.defaultBranch=main init -q --bare "$remote"
+	git -c init.defaultBranch=main init -q "$d"
+	git -C "$d" config commit.gpgsign false
+	git -C "$d" config user.name "Clean Committer"
+	git -C "$d" config user.email "1+clean@users.noreply.github.com"
+	git -C "$d" remote add origin "$remote"
+	printf 'seed\n' > "$d/file.txt"
+	git -C "$d" add file.txt
+	git -C "$d" commit -q -m 'chore(hooks): seed (LEV-1)' --no-verify
+	git -C "$d" push -q origin main
+	# Installed only now, so the seed push above is not what we are measuring.
+	mkdir -p "$d/.githooks"
+	cp "$push_hook" "$d/.githooks/pre-push"
+	chmod +x "$d/.githooks/pre-push"
+	git -C "$d" config core.hooksPath .githooks
+	printf '%s' "$d"
+}
+
+attempt_push() { # dir, [env assignments...]
+	local d="$1"; shift
+	push_err="$(env "$@" git -C "$d" push origin HEAD:refs/heads/main 2>&1 >/dev/null)"
+	push_rc=$?
+}
+
+# Case 0 — the trap, pinned. Nothing to push, so the hook is never consulted.
+r="$(new_push_repo)"
+attempt_push "$r"
+if [ "$push_rc" -eq 0 ]; then
+	ok "TRAP: an up-to-date push exits 0 without the hook firing (this is why the cases below diverge first)"
+else
+	bad "TRAP: an up-to-date push exits 0 without the hook firing" \
+		"expected rc=0 from a no-op push, got rc=$push_rc — the trap this suite documents may have changed"
+fi
+
+# Case 1 — a real divergence. Now the hook has something to read.
+r="$(new_push_repo)"
+git -C "$r" commit -q --allow-empty -m 'chore(hooks): diverge (LEV-1)' --no-verify
+attempt_push "$r"
+if [ "$push_rc" -eq 0 ]; then
+	bad "blocks a direct push to main" "guard did not fire: push succeeded (rc=0)"
+else
+	case "$push_err" in
+		*'Refusing to push directly to'*) ok "blocks a direct push to main" ;;
+		*) bad "blocks a direct push to main" \
+			"rejected (rc=$push_rc) but not by this hook: $(printf '%s' "$push_err" | tr '\n' ' ' | cut -c1-160)" ;;
+	esac
+fi
+remote_after="$(git -C "$r" ls-remote origin refs/heads/main | cut -f1)"
+local_head="$(git -C "$r" rev-parse HEAD)"
+if [ "$remote_after" != "$local_head" ]; then
+	ok "blocked push left the remote branch untouched"
+else
+	bad "blocked push left the remote branch untouched" "remote main moved to $local_head anyway"
+fi
+
+# Case 2 — the escape hatch. A guard whose override is broken gets disabled.
+r="$(new_push_repo)"
+git -C "$r" commit -q --allow-empty -m 'chore(hooks): diverge (LEV-1)' --no-verify
+attempt_push "$r" ALLOW_PROTECTED_PUSH=1
+if [ "$push_rc" -eq 0 ]; then
+	ok "ALLOW_PROTECTED_PUSH=1 permits the same push"
+else
+	bad "ALLOW_PROTECTED_PUSH=1 permits the same push" \
+		"override failed (rc=$push_rc): $(printf '%s' "$push_err" | tr '\n' ' ' | cut -c1-160)"
+fi
+
+# Case 3 — deletion of a protected branch is a push too.
+r="$(new_push_repo)"
+push_err="$(git -C "$r" push origin --delete main 2>&1 >/dev/null)"
+push_rc=$?
+case "$push_err" in
+	*'Refusing to push directly to'*) ok "blocks deletion of a protected branch" ;;
+	*) bad "blocks deletion of a protected branch" \
+		"rc=$push_rc, stderr: $(printf '%s' "$push_err" | tr '\n' ' ' | cut -c1-160)" ;;
+esac
+
+# Case 4 — negative control: an ordinary feature branch is none of the hook's business.
+r="$(new_push_repo)"
+git -C "$r" checkout -q -b lev-1-feature
+git -C "$r" commit -q --allow-empty -m 'chore(hooks): work (LEV-1)' --no-verify
+push_err="$(git -C "$r" push origin HEAD:refs/heads/lev-1-feature 2>&1 >/dev/null)"
+push_rc=$?
+if [ "$push_rc" -eq 0 ]; then
+	ok "lets an ordinary branch through"
+else
+	bad "lets an ordinary branch through" \
+		"false positive (rc=$push_rc): $(printf '%s' "$push_err" | tr '\n' ' ' | cut -c1-160)"
+fi
+
+# ===========================================================================
 printf '\n%s──────────────────────────────────────────────%s\n' "$c_dim" "$c_off"
 if [ "$n_fail" -eq 0 ]; then
 	printf '%s%d passed%s, 0 failed\n\n' "$c_green" "$n_pass" "$c_off"

@@ -50,12 +50,31 @@ to it.
 
 ## Contributing setup
 
-This repository is public and stays free of personal data, private project names, and credentials. A
-tracked pre-commit hook enforces that. Enable it once per clone:
+Three tracked git hooks enforce this repository's rules. Arm them once per clone:
 
 ```sh
-git config core.hooksPath .githooks
+./install-hooks.sh
 ```
+
+| Hook | What it refuses |
+| --- | --- |
+| `pre-commit` | Personal data, private project names, and credential-shaped strings — this repo is public and history is permanent. |
+| `commit-msg` | A subject that is not `<type>(<scope>): <subject> (LEV-<id>)`. |
+| `pre-push` | A direct push to `main`, deletions included. `ALLOW_PROTECTED_PUSH=1` overrides it locally. |
+
+Git runs nothing on clone — by design, since a repository that could execute code on `git clone`
+would be a remote-code-execution vector — so this one command is unavoidable. It replaces the bare
+`git config core.hooksPath .githooks` this page used to ask for: it also checks each hook is
+executable, which the config setting cannot. A hook without its executable bit is skipped by git with
+only a `hint:` line, and a guard that silently does nothing is worse than no guard.
+
+`main` is additionally protected server-side on GitHub — a pull request is required, and force-pushes
+and deletion are blocked. That is the authoritative guard for anyone who never runs the script; the
+hooks fail earlier and explain themselves.
+
+**The `commit-msg` hook expects an internal ticket id, which outside contributors will not have.**
+Send a pull request from your fork instead: the hook runs only where it is installed, and a squashed
+PR takes its subject from the PR title.
 
 Then create your local marker list:
 

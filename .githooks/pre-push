@@ -1,0 +1,83 @@
+#!/usr/bin/env sh
+# Levian OS pre-push gate: refuse to push straight to `main`.
+#
+# Enable once per clone:   ./install-hooks.sh
+#
+# This repository is public, so unlike its private siblings it *also* has real GitHub branch
+# protection on `main`: a pull request is required, and force-pushes and deletion are blocked
+# server-side. That is the authoritative guard. This hook is not redundant beside it —
+#
+#   - it fails before the network round-trip, with an explanation instead of a remote rejection;
+#   - it blocks the push that a server-side rule cannot judge, because every push from this machine
+#     arrives under the same account whether a person or an agent made it. A local hook can be told
+#     the difference, with an explicit environment variable. A remote one cannot.
+#
+# The mistake it guards against needs no carelessness at all:
+#
+#     git checkout -b <branch> origin/main    # -> branch '<branch>' set up to track 'origin/main'
+#
+# Branching off a *remote-tracking* ref leaves the new branch's upstream pointing at `origin/main`.
+# Until the first explicit `git push -u origin <branch>`, an IDE's "push current branch" — which
+# targets upstream, not the same-named branch — pushes your work onto `main`. Branch off the *local*
+# `main` instead (`git checkout -b <branch> main`) and no upstream is set at all.
+#
+# Escape hatch, for the rare push that genuinely must land on a protected branch — undoing exactly
+# the above, for instance:
+#
+#     ALLOW_PROTECTED_PUSH=1 git push …
+#
+# Note this hatch opens the *local* gate only. With branch protection on, the server will still
+# refuse; that is the intended order — the deliberate override is a local decision, and the remote
+# remains the one that cannot be talked round.
+#
+# Git calls this hook as `pre-push <remote> <url>` with one line per ref on stdin:
+#     <local ref> <local sha> <remote ref> <remote sha>
+# Deletions arrive with an all-zero local sha and are blocked too — deleting `main` is not an
+# accident anyone should be one keystroke away from.
+#
+# Testing this guard: git sends EMPTY stdin when there is nothing to push, so the loop below never
+# runs and the hook exits 0. `git push --dry-run origin HEAD:refs/heads/main` on an up-to-date branch
+# therefore prints "Everything up-to-date" and proves nothing. Test against a real divergence
+# (`git commit --allow-empty` is enough) and confirm you see the refusal text, not silence. The cases
+# in .githooks/test/run-tests.sh do exactly that.
+
+set -eu
+
+PROTECTED_REFS='refs/heads/main'
+
+if [ "${ALLOW_PROTECTED_PUSH:-0}" = "1" ]; then
+  echo "[pre-push] ALLOW_PROTECTED_PUSH=1 — protected-branch check bypassed."
+  exit 0
+fi
+
+BLOCKED=''
+# shellcheck disable=SC2034  # positional placeholders: git supplies 4 fields, only the 3rd is read
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ -n "${remote_ref:-}" ] || continue
+  for protected in $PROTECTED_REFS; do
+    if [ "$remote_ref" = "$protected" ]; then
+      BLOCKED="$BLOCKED ${remote_ref#refs/heads/}"
+    fi
+  done
+done
+
+[ -n "$BLOCKED" ] || exit 0
+
+CURRENT=$(git branch --show-current 2>/dev/null || echo '<detached>')
+cat >&2 <<EOF
+[pre-push] ✗ Refusing to push directly to:$BLOCKED
+
+  Every change lands on 'main' through a pull request. This is also enforced on the
+  server for this repository, so a direct push would be rejected there anyway — this
+  just tells you now, and tells you why.
+
+  Meant to push your own branch? Its upstream is probably 'origin/main' — that is
+  what 'git checkout -b <branch> origin/main' configures. Point it at itself:
+
+      git push -u origin $CURRENT
+
+  Really meant to push a protected branch? This opens the local gate only:
+
+      ALLOW_PROTECTED_PUSH=1 git push <args>
+EOF
+exit 1

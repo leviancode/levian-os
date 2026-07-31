@@ -379,6 +379,14 @@ msg_block 'feat(skills): add a thing' \
 msg_block 'feat(skills): add a thing' \
 	'key: ...and the key it names comes from that branch' 'expected OPS-<number>' 'ops-42-runbook'
 
+# The example text in a rejection is the most copyable thing in it. On a keyed
+# branch it must quote that branch's own id, so the fix is a paste; anywhere else
+# it must not look like a real ticket, or the message itself mislinks a commit.
+msg_block 'feat(skills): add a thing' \
+	'example: quotes the branch own id, so the fix is copyable' '(LEV-283)' 'lev-283-fixture'
+msg_block 'add a thing' \
+	'example: an unkeyed branch shows a placeholder, never a real id' 'LEV-<n>' 'my-feature'
+
 # On an unkeyed branch the key cannot be verified, so any well-formed one passes.
 # (The "no id at all" case on such a branch is the public-repo behaviour below —
 # the sibling private copy refuses it instead, which is the one line they differ by.)

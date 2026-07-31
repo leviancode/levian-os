@@ -115,13 +115,22 @@ BRANCH_KEY=$(printf '%s' "$BRANCH" |
 	sed -n -E 's/^([A-Za-z]{2,6})-[0-9]+(-.*)?$/\1/p' |
 	tr '[:lower:]' '[:upper:]')
 
+BRANCH_NUM=$(printf '%s' "$BRANCH" |
+	sed -n -E 's/^[A-Za-z]{2,6}-([0-9]+)(-.*)?$/\1/p')
+
+# The example in an error message is the most copyable text in it, so it had better be the id the
+# author actually needs. On a keyed branch that is known — quote it, and the fix becomes paste. Where
+# it is not known, the placeholder must not look like a real ticket: an invented number here would
+# link a commit to somebody else's ticket, which is the silent mislinking the range rule exists to
+# stop, arriving by another door. Hence `<n>` for the second id in every case.
 if [ -n "$BRANCH_KEY" ]; then
 	KEY_RE="$BRANCH_KEY"
-	EXAMPLE_ID="$BRANCH_KEY-123"
+	EXAMPLE_ID="$BRANCH_KEY-$BRANCH_NUM"
 else
 	KEY_RE='[A-Z][A-Z0-9]+'
-	EXAMPLE_ID='LEV-123'
+	EXAMPLE_ID='LEV-<n>'
 fi
+EXAMPLE_MANY="$EXAMPLE_ID, ${BRANCH_KEY:-LEV}-<n>"
 
 ID_RE="\\($KEY_RE-[0-9]+(, ?$KEY_RE-[0-9]+)*\\)\$"
 
@@ -139,7 +148,7 @@ explain() {
 
 		  For example:
 		      feat(skills): add the release checklist skill ($EXAMPLE_ID)
-		      fix(hooks): stop the credential scan exiting early ($EXAMPLE_ID, $EXAMPLE_ID)
+		      fix(hooks): stop the credential scan exiting early ($EXAMPLE_MANY)
 
 		  Your message was not lost — reopen it with:
 		      git commit -e -F $GIT_DIR/COMMIT_EDITMSG

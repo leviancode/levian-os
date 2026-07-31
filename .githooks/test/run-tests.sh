@@ -280,8 +280,11 @@ msg_hook="$here/../commit-msg"
 
 # A throwaway repo with only commit-msg installed, so the personal-marker guard
 # cannot be what blocks a case here.
+#
+# The branch matters: the hook reads the team key off it, so the branch name is an
+# input to every case below, not scenery. Defaults to a keyed branch (STRICT mode).
 new_msg_repo() {
-	local d
+	local d branch="${1:-lev-276-fixture}"
 	d="$(mktemp -d)"
 	tmpdirs+=("$d")
 	git -c init.defaultBranch=main init -q "$d"
@@ -292,6 +295,7 @@ new_msg_repo() {
 	git -C "$d" config commit.gpgsign false
 	git -C "$d" config user.name "Clean Committer"
 	git -C "$d" config user.email "1+clean@users.noreply.github.com"
+	[ "$branch" = main ] || git -C "$d" checkout -q -b "$branch"
 	printf 'seed\n' > "$d/file.txt"
 	git -C "$d" add file.txt
 	printf '%s' "$d"
@@ -305,15 +309,15 @@ attempt_subject() {
 	commit_count="$(git -C "$d" rev-list --count --all 2>/dev/null || printf 'ERR')"
 }
 
-msg_block() { # subject, label, reason-needle
-	local d; d="$(new_msg_repo)"
+msg_block() { # subject, label, reason-needle, [branch]
+	local d; d="$(new_msg_repo "${4:-}")"
 	attempt_subject "$d" "$1"
 	expect_block "$2"
 	expect_reason "$2 — for the right reason" "$3"
 }
 
-msg_allow() { # subject, label
-	local d; d="$(new_msg_repo)"
+msg_allow() { # subject, label, [branch]
+	local d; d="$(new_msg_repo "${3:-}")"
 	attempt_subject "$d" "$1"
 	expect_allow "$2"
 }
@@ -343,6 +347,58 @@ msg_allow 'Revert "feat(skills): add a typing indicator (LEV-231)"' \
 	'accepts: revert subject'
 msg_allow 'fixup! feat(skills): add a typing indicator (LEV-231)' \
 	'accepts: fixup! (squashed away before it lands)'
+
+# ---------------------------------------------------------------------------
+# The team key is read off the branch, never hard-coded. These cases are the
+# reason: a second team in the tracker must work with no edit to this file, and
+# a key that does not belong to the branch must not pass.
+# ---------------------------------------------------------------------------
+
+msg_allow 'feat(skills): add a thing (OPS-42)' \
+	'key: a DIFFERENT team key passes on its own branch' 'ops-42-runbook'
+msg_block 'feat(skills): add a thing (LEV-42)' \
+	'key: the wrong key is refused even though it is well-formed' 'Wrong team key' 'ops-42-runbook'
+msg_block 'feat(skills): add a thing (ABC-1)' \
+	'key: an invented key is refused on a keyed branch' 'Wrong team key' 'lev-276-fixture'
+msg_block 'feat(skills): add a thing (LEV-230, ABC-1)' \
+	'key: one bad key among several is still refused' 'Wrong team key' 'lev-276-fixture'
+msg_allow 'feat(skills): add a thing (LEV-13)' \
+	'key: legacy feat/KEY-nn branch shape still yields a key' 'feat/LEV-13-domain-models'
+
+# A branch that merely looks keyed must not be mistaken for one — `v2-1-0` would
+# read as key V2 if digits were allowed, hard-blocking every commit on it.
+msg_allow 'feat(skills): add a thing (LEV-1)' \
+	'key: v2-1-0 is not a team key — falls back, does not hard-block' 'v2-1-0'
+msg_allow 'feat(skills): add a thing (LEV-1)' \
+	'key: release-2-0 likewise' 'release-2-0'
+
+# A keyed branch missing its id must name the key it expected, so the fix is
+# obvious from the message alone.
+msg_block 'feat(skills): add a thing' \
+	'key: a missing id on a keyed branch names the expected key' 'expected LEV-<number>' 'lev-276-fixture'
+msg_block 'feat(skills): add a thing' \
+	'key: ...and the key it names comes from that branch' 'expected OPS-<number>' 'ops-42-runbook'
+
+# On an unkeyed branch the key cannot be verified, so any well-formed one passes.
+# (The "no id at all" case on such a branch is the public-repo behaviour below —
+# the sibling private copy refuses it instead, which is the one line they differ by.)
+msg_allow 'feat(skills): add a thing (ABC-1)' \
+	'key: unkeyed branch accepts any well-formed key' 'main'
+
+# ---------------------------------------------------------------------------
+# Outside contributors. This repository is public: someone sending a pull request
+# from their own fork has no ticket number and must not be asked to invent one.
+# This is the single behavioural difference from the private siblings' copy.
+# ---------------------------------------------------------------------------
+
+msg_allow 'docs(readme): fix a typo' \
+	'public: no ticket id needed on a branch the contributor named' 'fix-readme-typo'
+msg_allow 'feat(skills): add a thing' \
+	'public: ...same on any unkeyed branch' 'my-cool-feature'
+msg_block 'add a thing' \
+	'public: but Conventional Commits shape is still required' 'Not a Conventional Commit' 'my-cool-feature'
+msg_block 'docs(readme): fix a typo' \
+	'public: a maintainer on a keyed branch is still bound' 'ticket id' 'lev-276-fixture'
 
 # ===========================================================================
 printf '\n%spre-push guard — test suite%s\n' "$c_dim" "$c_off"

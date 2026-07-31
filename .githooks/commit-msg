@@ -5,9 +5,10 @@
 #
 # WHY THIS FILE IS NOT THE SHARED COPY. The sibling repositories in this organisation run a
 # byte-identical `commit-msg`, kept honest by comparing `shasum -a 256` across them. This one is a
-# deliberate variant: the shared text names those repositories, they are private, and this repository
-# is public — the pre-commit guard beside this file blocks exactly that. The logic below is the same
-# rule and should stay that way; only the prose differs, and only because it has to.
+# deliberate variant for two reasons: the shared text names those repositories and they are private,
+# which the pre-commit guard beside this file exists to prevent; and this repository is public, so it
+# treats contributors without a ticket differently — see REQUIRE_ID_WITHOUT_BRANCH_KEY below. The
+# checking logic is otherwise the same rule and should stay that way.
 #
 # WHAT THIS CHECKS. The format is defined once, in the branching rule that ships with the private HQ
 # layer; this file enforces it and does not restate it.
@@ -15,8 +16,36 @@
 #   1. Conventional Commits shape — <type>(<scope>): <subject>, scope required.
 #   2. The trailing ticket id     — "(LEV-276)", or "(LEV-230, LEV-231)" for several.
 #   3. That the id is not a range — "(LEV-230..234)" is rejected on its own terms, because the
-#      tracker links only LEV-230 and leaves every later id where it was. The commit looks correct
-#      while silently losing tickets, so it earns its own error rather than falling out of (2).
+#      tracker links only the first id and leaves every later one where it was. The commit looks
+#      correct while silently losing tickets, so it earns its own error rather than falling out
+#      of (2).
+#
+# WHERE THE TEAM KEY COMES FROM — and why it is not a constant.
+#
+# Hard-coding a project's team key here would put a second copy of a fact the tracker already owns
+# into every repository that runs this hook, to be found and corrected in all of them on the day a
+# second team exists. So the key is *derived from the branch name*: the branching rule requires
+# `<key>-<id>-<slug>`, and the tracker generates that string itself ("Copy git branch name"). The
+# branch therefore carries the authoritative key, and matching it means matching the tracker — with
+# no constant to maintain, no API token in a clone, and no network call on the commit path. (A live
+# lookup would need a token in every clone, would fail offline, and would then have to choose between
+# blocking the commit and skipping the check — the second being a guard that is silently off.)
+#
+# Two modes follow from that:
+#
+#   STRICT      — the branch yields a key (`lev-276-…`, `feat/LEV-13-…`): every id in the subject
+#                 must use that key, so `(ABC-1)` on `lev-276-…` is refused and so is a typo.
+#   STRUCTURAL  — the branch yields nothing (`main`, a branch you named yourself, detached HEAD):
+#                 the key cannot be verified here, and the error says so rather than pretending
+#                 otherwise.
+#
+# The branch's own *number* is deliberately not enforced against the subject: a commit may
+# legitimately close tickets other than the one it was branched for. The key is what must agree.
+#
+# OUTSIDE CONTRIBUTORS. You have no ticket number, and you should not have to invent one. On a branch
+# that declares no key — anything you would naturally name your own — this hook asks only that the
+# subject be a Conventional Commit with a scope. The ticket id is required only of branches that
+# announce one, which are the maintainers' own. Nothing here needs an account anywhere.
 #
 # WHAT IT DELIBERATELY DOES NOT CHECK (known limits, so nobody mistakes silence for approval):
 #
@@ -24,6 +53,8 @@
 #     inside a shell hook drifts from the repo it claims to describe. Scope must be present and
 #     non-empty — its value is on you.
 #   - Subject length. The 72-character limit in the rule is guidance, and is unenforced elsewhere.
+#   - That the ticket exists, is open, or is yours. That is a question for the tracker, and the
+#     honest place to ask it is CI on the pull request, where a token can live in secrets.
 #   - The body. Only the subject line is read.
 #
 # WHAT IS EXEMPT, and why:
@@ -33,13 +64,15 @@
 #   - Anything committed during a rebase, cherry-pick, revert or merge resolution. Replaying old
 #     history must not be blocked by a rule that postdates it.
 #
-# OUTSIDE CONTRIBUTORS: the ticket id is an internal reference and you will not have one. Send a pull
-# request from your fork — this hook runs only where it is installed, and a squashed PR takes its
-# subject from the PR title, which a maintainer writes.
-#
 # `git commit --no-verify` skips this, as it skips every hook. That is git's design, not a hole.
 
 set -eu
+
+# Whether a ticket id is required when the branch declares no key. This repository is public and sets
+# it to 0: an outside contributor working on a branch of their own naming has no ticket number to
+# cite, and refusing their commit over an internal reference would be absurd. The private siblings
+# set it to 1, where every change does come from a ticket.
+REQUIRE_ID_WITHOUT_BRANCH_KEY=0
 
 MSG_FILE=${1:?commit-msg hook called without a message file}
 
@@ -63,6 +96,35 @@ case $SUBJECT in
 'Merge '* | 'Revert '* | 'fixup!'* | 'squash!'* | 'amend!'*) exit 0 ;;
 esac
 
+# Derive the team key from the branch. Everything up to the last '/' is dropped, so both `lev-276-…`
+# and a `feat/LEV-13-…` style yield LEV.
+#
+# Letters only, two to six of them. A tracker may permit digits in a team key, so this can fail to
+# recognise one — and that is the safe direction: an unrecognised key falls back to STRUCTURAL, where
+# only the key goes unverified. Allowing digits would instead misread an ordinary branch like
+# `v2-1-0` as key V2, and then *hard-block* every commit on it for citing the wrong tracker. Fail
+# toward the weaker check, never toward the wrong one.
+#
+# `symbolic-ref`, not `rev-parse --abbrev-ref`: on a branch with no commits yet the latter prints the
+# literal string "HEAD", which would silently drop the very first commit in a repository into
+# STRUCTURAL mode. symbolic-ref reports the branch name before the first commit, and stays quiet on a
+# detached HEAD, which is exactly the distinction that matters here.
+BRANCH=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo '')
+BRANCH=${BRANCH##*/}
+BRANCH_KEY=$(printf '%s' "$BRANCH" |
+	sed -n -E 's/^([A-Za-z]{2,6})-[0-9]+(-.*)?$/\1/p' |
+	tr '[:lower:]' '[:upper:]')
+
+if [ -n "$BRANCH_KEY" ]; then
+	KEY_RE="$BRANCH_KEY"
+	EXAMPLE_ID="$BRANCH_KEY-123"
+else
+	KEY_RE='[A-Z][A-Z0-9]+'
+	EXAMPLE_ID='LEV-123'
+fi
+
+ID_RE="\\($KEY_RE-[0-9]+(, ?$KEY_RE-[0-9]+)*\\)\$"
+
 # Shared footer. Every failure below ends the same way: show what was written, show the shape, and
 # say how to get the message back — retyping a paragraph because a hook rejected one character is
 # how hooks come to be run with --no-verify.
@@ -73,11 +135,11 @@ explain() {
 		      $SUBJECT
 
 		  Required:
-		      <type>(<scope>): <subject> (LEV-<id>)
+		      <type>(<scope>): <subject> ($EXAMPLE_ID)
 
 		  For example:
-		      feat(skills): add the release checklist skill (LEV-231)
-		      fix(hooks): stop the credential scan exiting early (LEV-230, LEV-231)
+		      feat(skills): add the release checklist skill ($EXAMPLE_ID)
+		      fix(hooks): stop the credential scan exiting early ($EXAMPLE_ID, $EXAMPLE_ID)
 
 		  Your message was not lost — reopen it with:
 		      git commit -e -F $GIT_DIR/COMMIT_EDITMSG
@@ -94,17 +156,35 @@ if ! printf '%s' "$SUBJECT" | grep -qE -e "^($TYPES)\([a-z0-9._/-]+\)!?: .+"; th
 	explain
 fi
 
-if printf '%s' "$SUBJECT" | grep -qE -e 'LEV-[0-9]+[[:space:]]*\.\.'; then
+if printf '%s' "$SUBJECT" | grep -qE -e '[A-Z][A-Z0-9]+-[0-9]+[[:space:]]*\.\.'; then
 	echo "[commit-msg] ✗ Ticket ranges do not link." >&2
 	echo "             The tracker matches only the first id in 'LEV-230..234'; every later ticket is" >&2
 	echo "             left where it was while the commit looks correct. Write them out, comma-separated." >&2
 	explain
 fi
 
-if ! printf '%s' "$SUBJECT" | grep -qE -e '\(LEV-[0-9]+(, ?LEV-[0-9]+)*\)$'; then
-	echo "[commit-msg] ✗ Subject does not end with a ticket id." >&2
-	echo "             Without one the tracker never moves the ticket, and it is left behind." >&2
+if printf '%s' "$SUBJECT" | grep -qE -e "$ID_RE"; then
+	exit 0
+fi
+
+# Something id-shaped is present, but not with the key this branch says it should carry. That earns
+# its own message: the author did cite a ticket, so telling them one is missing would be a lie.
+if [ -n "$BRANCH_KEY" ] && printf '%s' "$SUBJECT" | grep -qE -e '\([A-Z][A-Z0-9]+-[0-9]+(,[^)]*)?\)$'; then
+	echo "[commit-msg] ✗ Wrong team key for this branch." >&2
+	echo "             Branch '$BRANCH' says the key is '$BRANCH_KEY', so ids must read $BRANCH_KEY-<number>." >&2
+	echo "             The tracker generated that branch name, so it is the tracker's own answer." >&2
 	explain
 fi
 
-exit 0
+if [ -z "$BRANCH_KEY" ] && [ "$REQUIRE_ID_WITHOUT_BRANCH_KEY" -eq 0 ]; then
+	exit 0
+fi
+
+echo "[commit-msg] ✗ Subject does not end with a ticket id." >&2
+echo "             Without one the tracker never moves the ticket, and it is left behind." >&2
+if [ -n "$BRANCH_KEY" ]; then
+	echo "             Branch '$BRANCH' gives the key: expected $BRANCH_KEY-<number>." >&2
+else
+	echo "             This branch declares no ticket key, so the key itself is not verified here." >&2
+fi
+explain

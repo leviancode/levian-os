@@ -59,7 +59,7 @@ Three tracked git hooks enforce this repository's rules. Arm them once per clone
 | Hook | What it refuses |
 | --- | --- |
 | `pre-commit` | Personal data, private project names, and credential-shaped strings — this repo is public and history is permanent. |
-| `commit-msg` | A subject that is not `<type>(<scope>): <subject> (LEV-<id>)`. |
+| `commit-msg` | A subject that is not a Conventional Commit with a scope. On a branch that names a ticket, also that the ticket id matches it. |
 | `pre-push` | A direct push to `main`, deletions included. `ALLOW_PROTECTED_PUSH=1` overrides it locally. |
 
 Git runs nothing on clone — by design, since a repository that could execute code on `git clone`
@@ -72,9 +72,16 @@ only a `hint:` line, and a guard that silently does nothing is worse than no gua
 and deletion are blocked. That is the authoritative guard for anyone who never runs the script; the
 hooks fail earlier and explain themselves.
 
-**The `commit-msg` hook expects an internal ticket id, which outside contributors will not have.**
-Send a pull request from your fork instead: the hook runs only where it is installed, and a squashed
-PR takes its subject from the PR title.
+**Contributing without a ticket number is expected and fine.** The `commit-msg` hook reads the ticket
+key off your branch name. On a branch you named yourself it asks only for a Conventional Commit
+subject with a scope — no ticket id, no account anywhere:
+
+```
+docs(readme): fix a broken link
+```
+
+An id is required only on branches that announce one (`lev-276-…`), which are the maintainers' own,
+and there it must match that branch's key. Nothing here is hard-coded to one project's tracker.
 
 Then create your local marker list:
 

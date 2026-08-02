@@ -10,7 +10,7 @@
 # and regenerated. You can still check this file has not been altered since it was generated:
 # .githooks/verify-generated checks it against the digest recorded below, and needs nothing
 # but this clone to do so.
-# generated-digest: sha256:1c64a2b7cd521b79ccb1c65cb58b4802517589c2f31739cf19a34e2256324bc6
+# generated-digest: sha256:ddaaf3051fe342638e86d14b4f5b774b424bc5513ea3045927cc5d0bd2a48ab5
 #
 # Levian OS pre-push gate: refuse to push straight to `main`.
 #
@@ -27,7 +27,7 @@
 #
 # The mistake this hook guards against needs no carelessness at all:
 #
-#     git checkout -b <branch> origin/main    # -> '<branch>' set up to track 'origin/main'
+#     git checkout -b <branch> origin/main   # -> branch '<branch>' set up to track 'origin/main'
 #
 # Branching off a *remote-tracking* ref leaves the new branch's upstream pointing at `origin/main`.
 # Until the first explicit `git push -u origin <branch>`, an IDE's "push current branch" — which

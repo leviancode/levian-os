@@ -30,6 +30,13 @@ landing. Directories may be stubs, interfaces will change without deprecation no
 no versioning or stability guarantee yet. Read it, take ideas from it, open an issue if something is
 interesting — but don't build anything load-bearing on it at this stage.
 
+**This engine is built with itself.** Every commit here is written by Claude Code, directed by a
+human who reviews and merges. That is not a disclaimer — it is the thing being demonstrated, and
+the reason the conventions in this repository are strict: each one exists because a session got it
+wrong first. Individual commits carry no AI attribution trailer; a marker on every commit of a
+repository whose every commit is authored the same way distinguishes nothing, so the fact is
+recorded here instead, once.
+
 ## Install
 
 Coming with the plugin packaging (Phase 5).

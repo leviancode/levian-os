@@ -1,57 +1,64 @@
 #!/usr/bin/env sh
+# GENERATED FILE — do not edit this copy.
+#
+# This hook is generated from a template that lives in the maintainer's private tooling layer
+# and is then committed here deliberately, so that a clone of this repository is guarded by
+# nothing but itself. That is the whole point: a hook set that exists only on one machine is
+# not a guard for anybody else, and a public repository has other people in it.
+#
+# Outside contributor? Edit nothing here — open an issue, and the change is made at the source
+# and regenerated. You can still check this file has not been altered since it was generated:
+# .githooks/verify-generated checks it against the digest recorded below, and needs nothing
+# but this clone to do so.
+# generated-digest: sha256:1550f8903f4c9884daec215acb59090e6184ddcba8f3f1ac67a91a4a15596799
+#
 # Levian OS commit-msg gate: the subject must be a Conventional Commit carrying its ticket id.
 #
 # Enable once per clone:   ./install-hooks.sh
 #
-# WHY THIS FILE IS NOT THE SHARED COPY. The sibling repositories in this organisation run a
-# byte-identical `commit-msg`, kept honest by comparing `shasum -a 256` across them. This one is a
-# deliberate variant for two reasons: the shared text names those repositories and they are private,
-# which the pre-commit guard beside this file exists to prevent; and this repository is public, so it
-# treats contributors without a ticket differently — see REQUIRE_ID_WITHOUT_BRANCH_KEY below. The
-# checking logic is otherwise the same rule and should stay that way.
-#
-# WHAT THIS CHECKS. The format is defined once, in the branching rule that ships with the private HQ
-# layer; this file enforces it and does not restate it.
+# WHAT THIS CHECKS. The format is defined once, in the branching rule that ships with the
+# private HQ layer; this file enforces it and does not restate it.
 #
 #   1. Conventional Commits shape — <type>(<scope>): <subject>, scope required.
 #   2. The trailing ticket id     — "(LEV-276)", or "(LEV-230, LEV-231)" for several.
-#   3. That the id is not a range — "(LEV-230..234)" is rejected on its own terms, because the
-#      tracker links only the first id and leaves every later one where it was. The commit looks
-#      correct while silently losing tickets, so it earns its own error rather than falling out
-#      of (2).
+#   3. That the id is not a range — "(LEV-230..234)" is rejected on its own terms, because the tracker
+#      links only LEV-230 and every later id is left where it was. The commit looks correct while
+#      silently losing tickets, so it earns its own error rather than falling out of (2).
 #
-# WHERE THE TEAM KEY COMES FROM — and why it is not a constant.
+# WHERE THE TEAM KEY COMES FROM — and why it is not a constant here.
 #
-# Hard-coding a project's team key here would put a second copy of a fact the tracker already owns
-# into every repository that runs this hook, to be found and corrected in all of them on the day a
-# second team exists. So the key is *derived from the branch name*: the branching rule requires
-# `<key>-<id>-<slug>`, and the tracker generates that string itself ("Copy git branch name"). The
-# branch therefore carries the authoritative key, and matching it means matching the tracker — with
-# no constant to maintain, no API token in a clone, and no network call on the commit path. (A live
-# lookup would need a token in every clone, would fail offline, and would then have to choose between
-# blocking the commit and skipping the check — the second being a guard that is silently off.)
+# Hard-coding a project's team key here would put a second copy of a fact the tracker already
+# owns into every repository that runs this hook, to be found and corrected in all of them on the
+# day a second team exists. So the key is *derived from the branch name*: the branching rule
+# requires `<key>-<id>-<slug>`, and the tracker generates that string itself ("Copy git branch
+# name"). The branch therefore carries the authoritative key, and matching it means matching the
+# tracker — with no constant to maintain, no API token in a clone, and no network call on the
+# commit path. (A live lookup would need a token in every clone, would fail offline, and would
+# then have to choose between blocking the commit and skipping the check — the second being a
+# guard that is silently off.)
 #
 # Two modes follow from that:
 #
 #   STRICT      — the branch yields a key (`lev-276-…`, `feat/LEV-13-…`): every id in the subject
 #                 must use that key, so `(ABC-1)` on `lev-276-…` is refused and so is a typo.
 #   STRUCTURAL  — the branch yields nothing (`main`, a branch you named yourself, detached HEAD):
-#                 the key cannot be verified here, and the error says so rather than pretending
-#                 otherwise.
+#                 the shape is still required, but which tracker it names cannot be verified here.
+#                 The error says so rather than pretending otherwise.
 #
 # The branch's own *number* is deliberately not enforced against the subject: a commit may
 # legitimately close tickets other than the one it was branched for. The key is what must agree.
 #
-# OUTSIDE CONTRIBUTORS. You have no ticket number, and you should not have to invent one. On a branch
-# that declares no key — anything you would naturally name your own — this hook asks only that the
-# subject be a Conventional Commit with a scope. The ticket id is required only of branches that
-# announce one, which are the maintainers' own. Nothing here needs an account anywhere.
+# OUTSIDE CONTRIBUTORS. You have no ticket number, and you should not have to invent one. On a
+# branch that declares no key — anything you would naturally name your own — this hook asks only
+# that the subject be a Conventional Commit with a scope. The ticket id is required only of
+# branches that announce one, which are the maintainers' own. Nothing here needs an account
+# anywhere.
 #
 # WHAT IT DELIBERATELY DOES NOT CHECK (known limits, so nobody mistakes silence for approval):
 #
-#   - The scope against a list. There is no config file here to keep one in, and a list hand-written
-#     inside a shell hook drifts from the repo it claims to describe. Scope must be present and
-#     non-empty — its value is on you.
+#   - The scope against a list. There is no config file here to keep one in, and a list
+#     hand-written inside a shell hook drifts from the repo it claims to describe. Scope must be
+#     present and non-empty — its value is on you.
 #   - Subject length. The 72-character limit in the rule is guidance, and is unenforced elsewhere.
 #   - That the ticket exists, is open, or is yours. That is a question for the tracker, and the
 #     honest place to ask it is CI on the pull request, where a token can live in secrets.
@@ -68,10 +75,11 @@
 
 set -eu
 
-# Whether a ticket id is required when the branch declares no key. This repository is public and sets
-# it to 0: an outside contributor working on a branch of their own naming has no ticket number to
-# cite, and refusing their commit over an internal reference would be absurd. The private siblings
-# set it to 1, where every change does come from a ticket.
+# Whether a ticket id is required when the branch declares no key. This repo sets it to 0,
+# and is the only one that does: it is public, and an outside contributor working on a
+# branch of their own naming has no ticket number to cite. A branch that DOES declare a
+# key is still checked strictly — the exemption is for people outside the tracker, not a
+# way round the rule for people inside it.
 REQUIRE_ID_WITHOUT_BRANCH_KEY=0
 
 MSG_FILE=${1:?commit-msg hook called without a message file}
@@ -96,14 +104,14 @@ case $SUBJECT in
 'Merge '* | 'Revert '* | 'fixup!'* | 'squash!'* | 'amend!'*) exit 0 ;;
 esac
 
-# Derive the team key from the branch. Everything up to the last '/' is dropped, so both `lev-276-…`
-# and a `feat/LEV-13-…` style yield LEV.
+# Derive the team key from the branch. Everything up to the last '/' is dropped, so both the current
+# `lev-276-<slug>` and the legacy `feat/LEV-13-<slug>` yield LEV.
 #
 # Letters only, two to six of them. A tracker may permit digits in a team key, so this can fail to
 # recognise one — and that is the safe direction: an unrecognised key falls back to STRUCTURAL, where
-# only the key goes unverified. Allowing digits would instead misread an ordinary branch like
-# `v2-1-0` as key V2, and then *hard-block* every commit on it for citing the wrong tracker. Fail
-# toward the weaker check, never toward the wrong one.
+# an id is still required and only its key goes unverified. Allowing digits would instead misread an
+# ordinary branch like `v2-1-0` as key V2, and then *hard-block* every commit on it for citing the
+# wrong tracker. Fail toward the weaker check, never toward the wrong one.
 #
 # `symbolic-ref`, not `rev-parse --abbrev-ref`: on a branch with no commits yet the latter prints the
 # literal string "HEAD", which would silently drop the very first commit in a repository into
@@ -114,7 +122,6 @@ BRANCH=${BRANCH##*/}
 BRANCH_KEY=$(printf '%s' "$BRANCH" |
 	sed -n -E 's/^([A-Za-z]{2,6})-[0-9]+(-.*)?$/\1/p' |
 	tr '[:lower:]' '[:upper:]')
-
 BRANCH_NUM=$(printf '%s' "$BRANCH" |
 	sed -n -E 's/^[A-Za-z]{2,6}-([0-9]+)(-.*)?$/\1/p')
 
@@ -122,7 +129,7 @@ BRANCH_NUM=$(printf '%s' "$BRANCH" |
 # author actually needs. On a keyed branch that is known — quote it, and the fix becomes paste. Where
 # it is not known, the placeholder must not look like a real ticket: an invented number here would
 # link a commit to somebody else's ticket, which is the silent mislinking the range rule exists to
-# stop, arriving by another door. Hence `<n>` for the second id in every case.
+# stop, arriving by another door. Hence `<n>` for the second id in every case (LEV-283).
 if [ -n "$BRANCH_KEY" ]; then
 	KEY_RE="$BRANCH_KEY"
 	EXAMPLE_ID="$BRANCH_KEY-$BRANCH_NUM"

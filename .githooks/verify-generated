@@ -1,0 +1,79 @@
+#!/usr/bin/env sh
+# GENERATED FILE — do not edit this copy.
+#
+# This hook is generated from a template that lives in the maintainer's private tooling layer
+# and is then committed here deliberately, so that a clone of this repository is guarded by
+# nothing but itself. That is the whole point: a hook set that exists only on one machine is
+# not a guard for anybody else, and a public repository has other people in it.
+#
+# Outside contributor? Edit nothing here — open an issue, and the change is made at the source
+# and regenerated. You can still check this file has not been altered since it was generated:
+# .githooks/verify-generated checks it against the digest recorded below, and needs nothing
+# but this clone to do so.
+# generated-digest: sha256:b2c357f8c71607be3d798dc80bae13e7a4e428cb44fa0c531fb1608e924c65c0
+#
+# Verify every generated guard in THIS repository still matches the digest recorded in
+# its own header — that nobody has hand-edited a generated file since it was written.
+#
+# This check is deliberately self-contained. It reads nothing outside this clone, names
+# no path that is not in it, and needs no tooling that is not already here. That is what
+# makes it usable in a public repository by someone who has never seen, and will never
+# see, the layer these files are generated from.
+#
+# What it can prove:     these files are exactly what the generator wrote.
+# What it CANNOT prove:  that the generator's source was current when it wrote them.
+#
+# Only the drift check in the source layer can prove the second, because only it has the
+# templates to compare against. Do not read a pass here as "these hooks are up to date" —
+# read it as "these hooks have not been tampered with."
+set -eu
+
+# Located from this script's own path rather than by asking git, and rather than from the
+# caller's working directory. It therefore needs no git, works from any cwd, and can be
+# exercised in a staging tree that is not a clone at all — which matters, because a check
+# that can only be tested in the place it is meant to protect tends not to be tested.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname "$here")
+
+checked=0
+bad=0
+
+# Generated files land in the repo root (commitlint config) or in the hook directory,
+# which is .githooks or .husky depending on whether the repo runs npm. Scanning all three
+# rather than carrying a list means this keeps working when a repo gains a guard, and
+# cannot fall out of step with a list nobody remembered to update. Non-existent
+# directories are skipped here — the zero-files check below is what makes that safe.
+for dir in "$root" "$root/.githooks" "$root/.husky" "$root/.githooks/test"; do
+	[ -d "$dir" ] || continue
+	for f in "$dir"/*; do
+		[ -f "$f" ] || continue
+		grep -qE '^(#|//) generated-digest: sha256:' "$f" || continue
+
+		want=$(sed -n -E 's|^(#\|//) generated-digest: sha256:||p' "$f" | head -1)
+		have=$(grep -vE '^(#|//) generated-digest: ' "$f" | shasum -a 256 | cut -d' ' -f1)
+
+		checked=$((checked + 1))
+		if [ "$want" = "$have" ]; then
+			echo "  ✓ ${f#"$root"/}"
+		else
+			bad=$((bad + 1))
+			echo "  ✗ ${f#"$root"/} — EDITED SINCE GENERATION" >&2
+			echo "      recorded: $want" >&2
+			echo "      actual:   $have" >&2
+		fi
+	done
+done
+
+# Finding nothing is a failure, not a pass. A verifier that silently checks zero files
+# reports success forever — including on the day someone deletes the files it guards.
+if [ "$checked" -eq 0 ]; then
+	echo "✗ verify-generated: found no generated files — expected at least one." >&2
+	exit 1
+fi
+
+if [ "$bad" -gt 0 ]; then
+	echo "✗ verify-generated: $bad of $checked file(s) edited since generation." >&2
+	exit 1
+fi
+
+echo "✓ verify-generated: $checked file(s) match their recorded digest."

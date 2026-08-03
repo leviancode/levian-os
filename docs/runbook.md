@@ -4,6 +4,14 @@ How the system is put together and how to operate it.
 
 > Pre-release. Sections land as the corresponding machinery does; §1 describes the layout everything
 > else assumes.
+>
+> **When this document changes:** when its subject does. A layer added or removed, a change in how
+> the layers compose, or a change in what enforces the boundary between them. Not on a cadence — the
+> planning document that created this file described it as extended by a paragraph in every phase,
+> and that did not happen once in its first thirteen days. A trigger tied to the thing described is a
+> promise this document can keep; a schedule was one it never kept. Machinery that has its own
+> reference elsewhere is named from here rather than re-described — a second description drifts from
+> the first the moment either changes.
 
 ---
 

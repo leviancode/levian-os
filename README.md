@@ -69,6 +69,20 @@ Three tracked git hooks enforce this repository's rules. Arm them once per clone
 | `commit-msg` | A subject that is not a Conventional Commit with a scope. On a branch that names a ticket, also that the ticket id matches it. |
 | `pre-push` | A direct push to `main`, deletions included. `ALLOW_PROTECTED_PUSH=1` overrides it locally. |
 
+`.githooks/` holds two more things that git never runs and you invoke yourself: `verify-generated`
+(below) and the test suite under `test/`.
+
+**Three of those four files are generated** — `commit-msg`, `pre-push`, and `verify-generated` each
+open with a `# GENERATED FILE — do not edit this copy.` line. They come from templates in the
+maintainer's private tooling layer and are committed here deliberately, so that a clone of this
+repository is guarded by nothing but itself. Editing your copy achieves nothing durable: the next
+regeneration overwrites it. `pre-commit` is the exception — it is hand-written, because what it
+scans for belongs to this repository alone.
+
+**If you think a hook is wrong, say so — that is welcome here.** Open an issue or a pull request
+rather than reaching for `--no-verify`; for a generated file the change is made to its template and
+regenerated, and `pre-commit` you can edit directly.
+
 Git runs nothing on clone — by design, since a repository that could execute code on `git clone`
 would be a remote-code-execution vector — so this one command is unavoidable. It replaces the bare
 `git config core.hooksPath .githooks` this page used to ask for: it also checks each hook is
@@ -134,6 +148,21 @@ file content and in paths.
   re-examined: the hook prevents a leak, it cannot undo one.
 - The commit *message* is not scanned — it is not final when a pre-commit hook runs.
 - `--no-verify` bypasses everything.
+
+### Checking the generated hooks
+
+```sh
+.githooks/verify-generated
+```
+
+Each generated file records a digest of its own contents. This checks that every one of them still
+matches, using nothing but this clone — no network, no private tooling, no account anywhere. It
+proves the committed hooks are exactly what the generator wrote and that none has been hand-edited
+since.
+
+**It does not prove they are current.** Whether a copy here is still in step with the template it
+came from can only be checked where the templates are, in the maintainer's private layer, and that
+check cannot run from this repository. Read a pass as *not tampered with*, never as *up to date*.
 
 ### Testing the guard
 

@@ -1,6 +1,6 @@
 ---
 name: chronicle
-description: "Use when a workflow needs to append a release milestone or a narrative entry to a project's docs/HISTORY.md: creates the file from its fixed header when absent and appends a dated entry at the end."
+description: "Use when completed work is appended to a project's docs/HISTORY.md — a release milestone, or a closed period's narrative, dated and past tense. For a single decision as it is taken, use adr instead."
 ---
 
 # Appending to a project chronicle

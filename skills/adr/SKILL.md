@@ -1,6 +1,6 @@
 ---
 name: adr
-description: "Use when the user or a workflow needs to record an architecture decision (ADR): creates docs/decisions/NNN-slug.md from the template and appends a line to docs/decisions/INDEX.md."
+description: "Use when one architecture decision needs recording as it is taken — writes the numbered record under docs/decisions/. For a period summary or a release entry, use chronicle instead."
 ---
 
 # Recording an architecture decision

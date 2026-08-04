@@ -52,7 +52,9 @@ a release mattered, and what was abandoned.
 ### 4. Verify before reporting
 
 Re-read the tail of the file. Confirm the new entry is the last thing in it, no italic guidance
-survives, and the date is right.
+survives, and the date is the one the Conventions call for — not merely today's.
+
+If it sits below an entry bearing a later date, that is expected, not a mistake to correct.
 
 Then read `git diff` on the chronicle. **It must show additions only** — a diff that touches any
 earlier line means something was rewritten, and the fix is to restore it, not to explain it.
@@ -60,9 +62,15 @@ earlier line means something was rewritten, and the fix is to restore it, not to
 ## Conventions
 
 - **Position** — appended at the end, always. Never inserted in date order, never sorted, never
-  regrouped. The file reads oldest-first and grows downward, so diffs stay clean and links into it by
-  line stay valid.
-- **Date** — ISO `YYYY-MM-DD`, the date the entry is compiled, in the heading beside the label.
+  regrouped, so diffs stay clean and links into the file by line stay valid. What this guarantees is
+  **record order, not date order**: the file reads in the order entries were written down, which is
+  not always the order things happened. A backfilled entry lands below newer ones, and a chronicle's
+  first entries are usually backfills. That is correct rather than a defect — sorting would mean
+  rewriting entries above the insertion point, which is exactly what the header forbids.
+- **Date** — ISO `YYYY-MM-DD`, in the heading beside the label, and which date depends on the shape.
+  A **milestone** takes the date the thing shipped; that is normally today, which is why the helper
+  defaults to it, but pass `--date` when recording a release after the fact. A **narrative** takes
+  the date it was compiled, because the period it covers is already in the label.
 - **Label** — the version for a milestone (`v1.4.0`), the period for a narrative (`2026-W31`,
   `2026-Q3`). One label per entry; do not merge two releases into one heading.
 - **Immutable once written** — an entry is a historical statement. When something recorded here turns
